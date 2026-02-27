@@ -490,16 +490,14 @@ class IOSSimulatorMCP {
   }
 
   private async captureScreenshot(udid: string): Promise<string> {
-    const ts = Date.now();
-    const png = `/tmp/ios_sim_${ts}.png`;
-    const jpg = `/tmp/ios_sim_${ts}.jpg`;
+    const jpg = `/tmp/ios_sim_${Date.now()}.jpg`;
     try {
-      await execAsync(`xcrun simctl io ${udid} screenshot "${png}"`);
-      await execAsync(`sips -s format jpeg -s formatOptions 85 "${png}" --out "${jpg}"`);
+      // simctl infers JPEG format from the .jpg extension — no intermediate PNG needed
+      await execAsync(`xcrun simctl io ${udid} screenshot "${jpg}"`);
       const buf = await readFile(jpg);
       return buf.toString('base64');
     } finally {
-      execAsync(`rm -f "${png}" "${jpg}"`).catch(() => {});
+      execAsync(`rm -f "${jpg}"`).catch(() => {});
     }
   }
 
