@@ -56,8 +56,10 @@ AI Agent / MCP Client
 - Full simulator discovery and boot control
 - App launch by bundle ID
 - Accessibility-first perception via normalized UI elements
-- Screenshot capture returned as MCP image content
+- Screenshot capture with resize and JPEG quality controls
+- Hash-based unchanged-image suppression to save tokens
 - `tap_text` for semantic interaction by visible label
+- `tap_relative` for resolution-independent tapping (for example `0.5, 0.5` = center)
 - `get_screen_summary` for one-call AI context (tree + screenshot)
 - Safe text input escaping in shell execution path
 - Tooling designed for Claude Desktop, Cursor, and any MCP-compatible client
@@ -70,14 +72,67 @@ AI Agent / MCP Client
 | `boot_simulator` | Boot a simulator by UDID |
 | `launch_app` | Launch an installed app by `bundle_id` |
 | `get_ui_tree` | Return full normalized accessibility tree |
-| `take_screenshot` | Return current screen as base64 JPEG image |
-| `get_screen_summary` | Return structured metadata + screenshot in one call |
+| `take_screenshot` | Return JPEG image with `max_dim`, `quality`, and unchanged-image suppression |
+| `get_screen_summary` | Return UI tree plus optional screenshot (`include_image`, `compact_tree`, image hash metadata) |
 | `tap` | Tap exact `(x, y)` coordinates |
+| `tap_relative` | Tap relative `(rx, ry)` in `[0,1]` (`0.5, 0.5` is center) |
 | `type_text` | Type into currently focused field |
 | `swipe` | Swipe between two points with optional duration |
 | `press_button` | Press `HOME`, `LOCK`, `SIDE_BUTTON`, or `SIRI` |
 | `find_elements` | Search UI elements by label/value/hint text |
 | `tap_text` | Find first matching element by text and tap its center |
+
+## Token-Efficient Usage
+
+Start with tree-only context, then request an image only when needed:
+
+```json
+{
+  "name": "get_screen_summary",
+  "arguments": {
+    "include_image": false,
+    "compact_tree": true
+  }
+}
+```
+
+When image is needed, compress it:
+
+```json
+{
+  "name": "get_screen_summary",
+  "arguments": {
+    "include_image": true,
+    "max_dim": 720,
+    "quality": 55
+  }
+}
+```
+
+Skip resending unchanged screenshots:
+
+```json
+{
+  "name": "get_screen_summary",
+  "arguments": {
+    "include_image": true,
+    "only_if_changed": true,
+    "previous_image_hash": "<last_hash>"
+  }
+}
+```
+
+Use relative taps when acting from image coordinates:
+
+```json
+{
+  "name": "tap_relative",
+  "arguments": {
+    "rx": 0.5,
+    "ry": 0.5
+  }
+}
+```
 
 ## Prerequisites
 

@@ -11,8 +11,16 @@ import {
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile } from 'fs/promises';
+import { createHash } from 'crypto';
 
 const execAsync = promisify(exec);
+
+const DEFAULT_MAX_DIM = 960;
+const DEFAULT_JPEG_QUALITY = 60;
+const MIN_MAX_DIM = 256;
+const MAX_MAX_DIM = 4096;
+const MIN_JPEG_QUALITY = 20;
+const MAX_JPEG_QUALITY = 95;
 
 interface SimulatorDevice {
   udid: string;
@@ -28,6 +36,22 @@ interface UIElement {
   hint?: string | null;
   frame: { x: number; y: number; w: number; h: number };
   enabled?: boolean;
+}
+
+interface ScreenshotOptions {
+  maxDim: number;
+  quality: number;
+}
+
+interface ScreenshotPayload {
+  base64: string;
+  hash: string;
+  sourceWidth: number;
+  sourceHeight: number;
+  sentWidth: number;
+  sentHeight: number;
+  maxDim: number;
+  quality: number;
 }
 
 async function getBootedUdid(): Promise<string> {
@@ -52,6 +76,33 @@ async function resolveUdid(udid?: string): Promise<string> {
   return udid ?? getBootedUdid();
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function toFiniteNumber(input: unknown): number | undefined {
+  if (typeof input !== 'number') return undefined;
+  return Number.isFinite(input) ? input : undefined;
+}
+
+function normalizeScreenshotOptions(maxDimInput?: unknown, qualityInput?: unknown): ScreenshotOptions {
+  const maxDimRaw = toFiniteNumber(maxDimInput);
+  const qualityRaw = toFiniteNumber(qualityInput);
+
+  const maxDim = clamp(
+    Math.round(maxDimRaw ?? DEFAULT_MAX_DIM),
+    MIN_MAX_DIM,
+    MAX_MAX_DIM
+  );
+  const quality = clamp(
+    Math.round(qualityRaw ?? DEFAULT_JPEG_QUALITY),
+    MIN_JPEG_QUALITY,
+    MAX_JPEG_QUALITY
+  );
+
+  return { maxDim, quality };
+}
+
 // idb ui describe-all returns a flat array of elements (no nesting)
 function normalizeElement(node: any): UIElement {
   const frame = node.frame ?? {};
@@ -72,18 +123,23 @@ function normalizeElement(node: any): UIElement {
 
 function findElementsByText(elements: UIElement[], query: string): UIElement[] {
   const lower = query.toLowerCase();
-  return elements.filter(el => {
+  return elements.filter((el) => {
     const text = [el.label, el.value, el.hint].filter(Boolean).join(' ').toLowerCase();
     return text.includes(lower);
   });
 }
 
+function isInteractiveElement(type: string): boolean {
+  return /(button|textfield|secure|switch|cell|link|tab|slider|picker|menu|checkbox|radio)/i.test(type);
+}
+
 class IOSSimulatorMCP {
   private server: Server;
+  private lastScreenshotHashByUdid: Map<string, string> = new Map();
 
   constructor() {
     this.server = new Server(
-      { name: 'app-screen-mcp', version: '2.0.0' },
+      { name: 'app-screen-mcp', version: '2.1.0' },
       { capabilities: { tools: {} } }
     );
     this.setupToolHandlers();
@@ -92,7 +148,7 @@ class IOSSimulatorMCP {
   private setupToolHandlers() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
-        // ── Device management ──────────────────────────────────────────────
+        // Device management
         {
           name: 'list_simulators',
           description: 'List all available iOS simulators with their state (Booted, Shutdown, etc.)',
@@ -123,10 +179,11 @@ class IOSSimulatorMCP {
             additionalProperties: false,
           },
         },
-        // ── Perception ─────────────────────────────────────────────────────
+
+        // Perception
         {
           name: 'get_ui_tree',
-          description: 'Get the full accessibility/UI tree of the current screen as structured JSON. Prefer this over screenshot for understanding what is on screen.',
+          description: 'Get the full accessibility/UI tree as structured JSON.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -137,27 +194,38 @@ class IOSSimulatorMCP {
         },
         {
           name: 'take_screenshot',
-          description: 'Take a screenshot of the iOS Simulator. Returns a base64-encoded JPEG image.',
+          description: 'Take a JPEG screenshot with optional compression and unchanged-image suppression.',
           inputSchema: {
             type: 'object',
             properties: {
               udid: { type: 'string', description: 'Simulator UDID (optional, defaults to booted simulator)' },
+              max_dim: { type: 'number', description: 'Max width/height for output image (default: 960)' },
+              quality: { type: 'number', description: 'JPEG quality 20..95 (default: 60)' },
+              only_if_changed: { type: 'boolean', description: 'Do not return image content if hash is unchanged' },
+              previous_image_hash: { type: 'string', description: 'Compare against this hash for unchanged detection' },
             },
             additionalProperties: false,
           },
         },
         {
           name: 'get_screen_summary',
-          description: 'Get an AI-optimized summary of the current screen: UI accessibility tree + screenshot combined into one payload. Best tool for understanding screen state before acting.',
+          description: 'Get screen context (UI tree and optional screenshot) with token-saving options.',
           inputSchema: {
             type: 'object',
             properties: {
               udid: { type: 'string', description: 'Simulator UDID (optional, defaults to booted simulator)' },
+              include_image: { type: 'boolean', description: 'Include screenshot image content (default: true)' },
+              max_dim: { type: 'number', description: 'Max width/height for output image (default: 960)' },
+              quality: { type: 'number', description: 'JPEG quality 20..95 (default: 60)' },
+              only_if_changed: { type: 'boolean', description: 'Do not return image content if hash is unchanged' },
+              previous_image_hash: { type: 'string', description: 'Compare against this hash for unchanged detection' },
+              compact_tree: { type: 'boolean', description: 'Return compact tree format for fewer tokens' },
             },
             additionalProperties: false,
           },
         },
-        // ── Interaction ────────────────────────────────────────────────────
+
+        // Interaction
         {
           name: 'tap',
           description: 'Tap at specific (x, y) coordinates on the simulator screen',
@@ -169,6 +237,20 @@ class IOSSimulatorMCP {
               udid: { type: 'string', description: 'Simulator UDID (optional, defaults to booted simulator)' },
             },
             required: ['x', 'y'],
+            additionalProperties: false,
+          },
+        },
+        {
+          name: 'tap_relative',
+          description: 'Tap using relative coordinates (rx, ry) in [0,1] where (0.5, 0.5) is center.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              rx: { type: 'number', description: 'Relative X in [0,1]' },
+              ry: { type: 'number', description: 'Relative Y in [0,1]' },
+              udid: { type: 'string', description: 'Simulator UDID (optional, defaults to booted simulator)' },
+            },
+            required: ['rx', 'ry'],
             additionalProperties: false,
           },
         },
@@ -219,14 +301,15 @@ class IOSSimulatorMCP {
             additionalProperties: false,
           },
         },
-        // ── AI utilities ───────────────────────────────────────────────────
+
+        // AI utilities
         {
           name: 'find_elements',
-          description: 'Search the UI tree for elements whose label, value, or hint contains the query string',
+          description: 'Search the UI tree for elements whose label, value, or hint contains query text',
           inputSchema: {
             type: 'object',
             properties: {
-              query: { type: 'string', description: 'Text to search for in element labels/values/hints' },
+              query: { type: 'string', description: 'Text to search for in labels/values/hints' },
               udid: { type: 'string', description: 'Simulator UDID (optional, defaults to booted simulator)' },
             },
             required: ['query'],
@@ -235,7 +318,7 @@ class IOSSimulatorMCP {
         },
         {
           name: 'tap_text',
-          description: 'Find a UI element by its visible text/label and tap its center. More reliable than coordinate tapping when accessibility labels are present.',
+          description: 'Find a UI element by visible text and tap its center.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -251,26 +334,55 @@ class IOSSimulatorMCP {
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const args = (request.params.arguments ?? {}) as Record<string, any>;
+
       switch (request.params.name) {
-        case 'list_simulators':  return this.listSimulators();
-        case 'boot_simulator':   return this.bootSimulator(args.udid as string);
-        case 'launch_app':       return this.launchApp(args.bundle_id as string, args.udid);
-        case 'get_ui_tree':      return this.getUiTree(args.udid);
-        case 'take_screenshot':  return this.takeScreenshot(args.udid);
-        case 'get_screen_summary': return this.getScreenSummary(args.udid);
-        case 'tap':              return this.tap(args.x as number, args.y as number, args.udid);
-        case 'type_text':        return this.typeText(args.text as string, args.udid);
-        case 'swipe':            return this.swipe(args.from_x, args.from_y, args.to_x, args.to_y, args.duration_ms, args.udid);
-        case 'press_button':     return this.pressButton(args.button as string, args.udid);
-        case 'find_elements':    return this.findElements(args.query as string, args.udid);
-        case 'tap_text':         return this.tapText(args.text as string, args.udid);
+        case 'list_simulators':
+          return this.listSimulators();
+        case 'boot_simulator':
+          return this.bootSimulator(args.udid as string);
+        case 'launch_app':
+          return this.launchApp(args.bundle_id as string, args.udid);
+        case 'get_ui_tree':
+          return this.getUiTree(args.udid);
+        case 'take_screenshot':
+          return this.takeScreenshot(
+            args.udid,
+            args.max_dim,
+            args.quality,
+            args.only_if_changed,
+            args.previous_image_hash
+          );
+        case 'get_screen_summary':
+          return this.getScreenSummary(
+            args.udid,
+            args.include_image,
+            args.max_dim,
+            args.quality,
+            args.only_if_changed,
+            args.previous_image_hash,
+            args.compact_tree
+          );
+        case 'tap':
+          return this.tap(args.x as number, args.y as number, args.udid);
+        case 'tap_relative':
+          return this.tapRelative(args.rx as number, args.ry as number, args.udid);
+        case 'type_text':
+          return this.typeText(args.text as string, args.udid);
+        case 'swipe':
+          return this.swipe(args.from_x, args.from_y, args.to_x, args.to_y, args.duration_ms, args.udid);
+        case 'press_button':
+          return this.pressButton(args.button as string, args.udid);
+        case 'find_elements':
+          return this.findElements(args.query as string, args.udid);
+        case 'tap_text':
+          return this.tapText(args.text as string, args.udid);
         default:
           throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
       }
     });
   }
 
-  // ── Device management ────────────────────────────────────────────────────
+  // Device management
 
   private async listSimulators() {
     try {
@@ -292,7 +404,7 @@ class IOSSimulatorMCP {
         }
       }
 
-      const booted = simulators.filter(s => s.state === 'Booted');
+      const booted = simulators.filter((s) => s.state === 'Booted');
       return {
         content: [{
           type: 'text',
@@ -308,7 +420,6 @@ class IOSSimulatorMCP {
     try {
       await execAsync(`xcrun simctl boot ${udid}`);
     } catch (error: any) {
-      // "Unable to boot device in current state: Booted" is not a failure
       if (!error.stderr?.includes('current state: Booted')) {
         throw new McpError(ErrorCode.InternalError, `Failed to boot simulator: ${error.message}`);
       }
@@ -330,7 +441,7 @@ class IOSSimulatorMCP {
     }
   }
 
-  // ── Perception ───────────────────────────────────────────────────────────
+  // Perception
 
   private async getUiTree(udid?: string) {
     const target = await resolveUdid(udid);
@@ -344,44 +455,127 @@ class IOSSimulatorMCP {
     }
   }
 
-  private async takeScreenshot(udid?: string) {
+  private async takeScreenshot(
+    udid?: string,
+    maxDimInput?: number,
+    qualityInput?: number,
+    onlyIfChanged?: boolean,
+    previousImageHash?: string
+  ) {
     const target = await resolveUdid(udid);
+    const options = normalizeScreenshotOptions(maxDimInput, qualityInput);
+
     try {
-      const base64 = await this.captureScreenshot(target);
-      return {
-        content: [{ type: 'image', data: base64, mimeType: 'image/jpeg' }],
+      const shot = await this.captureScreenshot(target, options);
+
+      const compareHash = previousImageHash ?? (
+        onlyIfChanged ? this.lastScreenshotHashByUdid.get(target) : undefined
+      );
+      const changed = compareHash ? compareHash !== shot.hash : true;
+
+      this.lastScreenshotHashByUdid.set(target, shot.hash);
+
+      const meta = {
+        udid: target,
+        hash: shot.hash,
+        previous_hash: compareHash ?? null,
+        changed,
+        included: changed,
+        source_width: shot.sourceWidth,
+        source_height: shot.sourceHeight,
+        sent_width: shot.sentWidth,
+        sent_height: shot.sentHeight,
+        max_dim: shot.maxDim,
+        quality: shot.quality,
       };
+
+      const content: any[] = [{ type: 'text', text: JSON.stringify(meta, null, 2) }];
+      if (changed) {
+        content.push({ type: 'image', data: shot.base64, mimeType: 'image/jpeg' });
+      }
+
+      return { content };
     } catch (error: any) {
       throw new McpError(ErrorCode.InternalError, `Failed to take screenshot: ${error.message}`);
     }
   }
 
-  private async getScreenSummary(udid?: string) {
+  private async getScreenSummary(
+    udid?: string,
+    includeImage?: boolean,
+    maxDimInput?: number,
+    qualityInput?: number,
+    onlyIfChanged?: boolean,
+    previousImageHash?: string,
+    compactTree?: boolean
+  ) {
     const target = await resolveUdid(udid);
+    const shouldIncludeImage = includeImage !== false;
+    const options = normalizeScreenshotOptions(maxDimInput, qualityInput);
 
-    const [treeResult, screenshotResult] = await Promise.allSettled([
-      this.fetchUiTree(target),
-      this.captureScreenshot(target),
-    ]);
+    const promises: Promise<any>[] = [this.fetchUiTree(target)];
+    if (shouldIncludeImage) {
+      promises.push(this.captureScreenshot(target, options));
+    }
 
-    const meta: Record<string, any> = { timestamp: Date.now(), udid: target };
+    const settled = await Promise.allSettled(promises);
+    const treeResult = settled[0];
+    const screenshotResult = shouldIncludeImage ? settled[1] : undefined;
+
+    const meta: Record<string, any> = {
+      timestamp: Date.now(),
+      udid: target,
+      include_image: shouldIncludeImage,
+      compact_tree: compactTree === true,
+    };
+
     if (treeResult.status === 'fulfilled') {
-      meta.elements = treeResult.value;
-      meta.element_count = treeResult.value.length;
+      const elements = treeResult.value as UIElement[];
+      meta.element_count = elements.length;
+      meta.elements = compactTree === true ? this.compactElements(elements) : elements;
     } else {
       meta.ui_tree_error = String(treeResult.reason?.message ?? treeResult.reason);
     }
 
     const content: any[] = [{ type: 'text', text: JSON.stringify(meta, null, 2) }];
 
-    if (screenshotResult.status === 'fulfilled') {
-      content.push({ type: 'image', data: screenshotResult.value, mimeType: 'image/jpeg' });
+    if (shouldIncludeImage && screenshotResult) {
+      if (screenshotResult.status === 'fulfilled') {
+        const shot = screenshotResult.value as ScreenshotPayload;
+        const compareHash = previousImageHash ?? (
+          onlyIfChanged ? this.lastScreenshotHashByUdid.get(target) : undefined
+        );
+        const changed = compareHash ? compareHash !== shot.hash : true;
+
+        this.lastScreenshotHashByUdid.set(target, shot.hash);
+
+        meta.image = {
+          hash: shot.hash,
+          previous_hash: compareHash ?? null,
+          changed,
+          included: changed,
+          source_width: shot.sourceWidth,
+          source_height: shot.sourceHeight,
+          sent_width: shot.sentWidth,
+          sent_height: shot.sentHeight,
+          max_dim: shot.maxDim,
+          quality: shot.quality,
+        };
+
+        content[0] = { type: 'text', text: JSON.stringify(meta, null, 2) };
+        if (changed) {
+          content.push({ type: 'image', data: shot.base64, mimeType: 'image/jpeg' });
+        }
+      } else {
+        meta.image_error = String(screenshotResult.reason?.message ?? screenshotResult.reason);
+        content[0] = { type: 'text', text: JSON.stringify(meta, null, 2) };
+      }
     }
 
     return { content };
   }
 
-  // ── Interaction ──────────────────────────────────────────────────────────
+  // Interaction
 
   private async tap(x: number, y: number, udid?: string) {
     const target = await resolveUdid(udid);
@@ -395,10 +589,36 @@ class IOSSimulatorMCP {
     }
   }
 
+  private async tapRelative(rx: number, ry: number, udid?: string) {
+    if (!Number.isFinite(rx) || !Number.isFinite(ry) || rx < 0 || rx > 1 || ry < 0 || ry > 1) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        'rx and ry must be finite numbers between 0 and 1.'
+      );
+    }
+
+    const target = await resolveUdid(udid);
+    try {
+      const size = await this.getScreenSize(target);
+      const x = Math.round(size.width * rx);
+      const y = Math.round(size.height * ry);
+
+      await execAsync(`idb ui tap --udid ${target} ${x} ${y}`);
+      return {
+        content: [{
+          type: 'text',
+          text: `Tapped relative (${rx}, ${ry}) -> absolute (${x}, ${y}) on ${target} (screen ${size.width}x${size.height})`,
+        }],
+      };
+    } catch (error: any) {
+      if (error instanceof McpError) throw error;
+      throw new McpError(ErrorCode.InternalError, `Failed to tap relative coordinates: ${error.message}`);
+    }
+  }
+
   private async typeText(text: string, udid?: string) {
     const target = await resolveUdid(udid);
     try {
-      // Single-quote wrap with inner single-quote escaping prevents shell injection
       const safe = text.replace(/'/g, "'\\''");
       await execAsync(`idb ui text --udid ${target} '${safe}'`);
       return {
@@ -409,13 +629,20 @@ class IOSSimulatorMCP {
     }
   }
 
-  private async swipe(fromX: number, fromY: number, toX: number, toY: number, durationMs?: number, udid?: string) {
+  private async swipe(
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    durationMs?: number,
+    udid?: string
+  ) {
     const target = await resolveUdid(udid);
     const durationSec = ((durationMs ?? 500) / 1000).toFixed(3);
     try {
       await execAsync(`idb ui swipe --udid ${target} ${fromX} ${fromY} ${toX} ${toY} --duration ${durationSec}`);
       return {
-        content: [{ type: 'text', text: `Swiped (${fromX},${fromY}) → (${toX},${toY}) over ${durationMs ?? 500}ms on ${target}` }],
+        content: [{ type: 'text', text: `Swiped (${fromX},${fromY}) to (${toX},${toY}) over ${durationMs ?? 500}ms on ${target}` }],
       };
     } catch (error: any) {
       throw new McpError(ErrorCode.InternalError, `Failed to swipe: ${error.message}`);
@@ -434,7 +661,7 @@ class IOSSimulatorMCP {
     }
   }
 
-  // ── AI utilities ─────────────────────────────────────────────────────────
+  // AI utilities
 
   private async findElements(query: string, udid?: string) {
     const target = await resolveUdid(udid);
@@ -480,24 +707,99 @@ class IOSSimulatorMCP {
     }
   }
 
-  // ── Internal helpers ─────────────────────────────────────────────────────
+  // Internal helpers
 
-  // idb ui describe-all returns a flat JSON array of elements
+  private compactElements(elements: UIElement[]) {
+    return elements
+      .filter((el) => isInteractiveElement(el.type) || Boolean(el.label) || Boolean(el.value))
+      .map((el) => {
+        const out: Record<string, any> = {
+          t: el.type,
+          f: [
+            Math.round(el.frame.x),
+            Math.round(el.frame.y),
+            Math.round(el.frame.w),
+            Math.round(el.frame.h),
+          ],
+        };
+
+        if (el.label) out.l = el.label;
+        if (el.value) out.v = el.value;
+        if (el.hint) out.h = el.hint;
+        if (el.enabled === false) out.e = false;
+
+        return out;
+      });
+  }
+
   private async fetchUiTree(udid: string): Promise<UIElement[]> {
     const { stdout } = await execAsync(`idb ui describe-all --udid ${udid}`);
     const raw: any[] = JSON.parse(stdout);
     return Array.isArray(raw) ? raw.map(normalizeElement) : [normalizeElement(raw)];
   }
 
-  private async captureScreenshot(udid: string): Promise<string> {
-    const jpg = `/tmp/ios_sim_${Date.now()}.jpg`;
+  private async getScreenSize(udid: string): Promise<{ width: number; height: number }> {
+    const elements = await this.fetchUiTree(udid);
+
+    const app = elements.find((el) => /application/i.test(el.type) && el.frame.w > 0 && el.frame.h > 0);
+    if (app) {
+      return { width: Math.round(app.frame.w), height: Math.round(app.frame.h) };
+    }
+
+    let maxX = 0;
+    let maxY = 0;
+    for (const el of elements) {
+      maxX = Math.max(maxX, el.frame.x + el.frame.w);
+      maxY = Math.max(maxY, el.frame.y + el.frame.h);
+    }
+
+    if (maxX <= 0 || maxY <= 0) {
+      throw new McpError(ErrorCode.InternalError, 'Unable to infer screen dimensions from UI tree.');
+    }
+
+    return { width: Math.round(maxX), height: Math.round(maxY) };
+  }
+
+  private async readImageSize(path: string): Promise<{ width: number; height: number }> {
+    const { stdout } = await execAsync(`sips -g pixelWidth -g pixelHeight "${path}"`);
+    const width = Number((stdout.match(/pixelWidth:\s*(\d+)/) ?? [])[1]);
+    const height = Number((stdout.match(/pixelHeight:\s*(\d+)/) ?? [])[1]);
+
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      throw new Error(`Failed to read image size from ${path}`);
+    }
+
+    return { width, height };
+  }
+
+  private async captureScreenshot(udid: string, options: ScreenshotOptions): Promise<ScreenshotPayload> {
+    const ts = Date.now();
+    const png = `/tmp/ios_sim_${ts}.png`;
+    const jpg = `/tmp/ios_sim_${ts}.jpg`;
+
     try {
-      // simctl infers JPEG format from the .jpg extension — no intermediate PNG needed
-      await execAsync(`xcrun simctl io ${udid} screenshot "${jpg}"`);
+      await execAsync(`xcrun simctl io ${udid} screenshot "${png}"`);
+      const source = await this.readImageSize(png);
+
+      await execAsync(
+        `sips -s format jpeg -s formatOptions ${options.quality} -Z ${options.maxDim} "${png}" --out "${jpg}"`
+      );
+
+      const sent = await this.readImageSize(jpg);
       const buf = await readFile(jpg);
-      return buf.toString('base64');
+
+      return {
+        base64: buf.toString('base64'),
+        hash: createHash('sha256').update(buf).digest('hex'),
+        sourceWidth: source.width,
+        sourceHeight: source.height,
+        sentWidth: sent.width,
+        sentHeight: sent.height,
+        maxDim: options.maxDim,
+        quality: options.quality,
+      };
     } finally {
-      execAsync(`rm -f "${jpg}"`).catch(() => {});
+      execAsync(`rm -f "${png}" "${jpg}"`).catch(() => {});
     }
   }
 
