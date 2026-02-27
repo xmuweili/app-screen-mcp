@@ -133,6 +133,124 @@ function isInteractiveElement(type: string): boolean {
   return /(button|textfield|secure|switch|cell|link|tab|slider|picker|menu|checkbox|radio)/i.test(type);
 }
 
+function normalizeText(value?: string | null): string {
+  return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function frameArea(frame: UIElement['frame']): number {
+  return Math.max(0, frame.w) * Math.max(0, frame.h);
+}
+
+function getScreenFrame(elements: UIElement[]): UIElement['frame'] {
+  const app = elements.find((el) => /application/i.test(el.type) && el.frame.w > 0 && el.frame.h > 0);
+  if (app) return app.frame;
+
+  let maxX = 0;
+  let maxY = 0;
+  for (const el of elements) {
+    maxX = Math.max(maxX, el.frame.x + el.frame.w);
+    maxY = Math.max(maxY, el.frame.y + el.frame.h);
+  }
+  return { x: 0, y: 0, w: maxX, h: maxY };
+}
+
+function scoreTextMatch(el: UIElement, query: string, screen: UIElement['frame']): number {
+  const q = normalizeText(query);
+  const label = normalizeText(el.label);
+  const value = normalizeText(el.value);
+  const hint = normalizeText(el.hint);
+  const area = frameArea(el.frame);
+  const screenArea = Math.max(1, frameArea(screen));
+  const areaRatio = area / screenArea;
+
+  let score = 0;
+  if (isInteractiveElement(el.type)) score += 100;
+
+  if (label === q || value === q || hint === q) score += 50;
+  if (label.startsWith(q) || value.startsWith(q) || hint.startsWith(q)) score += 25;
+  if (label.includes(q) || value.includes(q) || hint.includes(q)) score += 15;
+
+  // Prefer localized elements over full-screen containers for tap targeting.
+  if (!isInteractiveElement(el.type) && areaRatio > 0.5) score -= 30;
+  if (areaRatio < 0.15) score += 10;
+
+  return score;
+}
+
+function pickBestTextMatch(matches: UIElement[], query: string, all: UIElement[]): UIElement {
+  const screen = getScreenFrame(all);
+  return [...matches].sort((a, b) => {
+    const byScore = scoreTextMatch(b, query, screen) - scoreTextMatch(a, query, screen);
+    if (byScore !== 0) return byScore;
+    const aArea = a.frame.w * a.frame.h;
+    const bArea = b.frame.w * b.frame.h;
+    return aArea - bArea;
+  })[0];
+}
+
+function inferTapPointForText(
+  el: UIElement,
+  query: string,
+  screen: UIElement['frame']
+): { x: number; y: number; strategy: string } {
+  const centerX = Math.round(el.frame.x + el.frame.w / 2);
+  const centerY = Math.round(el.frame.y + el.frame.h / 2);
+
+  if (isInteractiveElement(el.type)) {
+    return { x: centerX, y: centerY, strategy: 'interactive-center' };
+  }
+
+  const screenArea = Math.max(1, frameArea(screen));
+  const areaRatio = frameArea(el.frame) / screenArea;
+  const label = String(el.label ?? el.value ?? '').trim();
+  const lines = label.split('\n').map((line) => line.trim()).filter(Boolean);
+
+  // For full-screen narrative/text containers, estimate tap position by the matching line.
+  if (areaRatio > 0.45 && lines.length >= 2) {
+    const q = normalizeText(query);
+    let index = lines.findIndex((line) => normalizeText(line).includes(q));
+    if (index < 0) {
+      // Query can be in merged text but not line-normalized; assume CTA is near the bottom.
+      index = lines.length - 1;
+    }
+    let lineRatio = (index + 0.5) / lines.length;
+    // CTA labels in hero-style onboarding screens are often visually lower than text-line center.
+    if (index === lines.length - 1) {
+      lineRatio = Math.max(lineRatio, 0.94);
+    }
+    const x = Math.round(el.frame.x + el.frame.w * 0.5);
+    const y = Math.round(el.frame.y + el.frame.h * lineRatio);
+    return { x, y, strategy: 'large-text-line' };
+  }
+
+  return { x: centerX, y: centerY, strategy: 'noninteractive-center' };
+}
+
+function buildTapPointCandidates(
+  el: UIElement,
+  primary: { x: number; y: number; strategy: string },
+  screen: UIElement['frame']
+): Array<{ x: number; y: number; strategy: string }> {
+  const candidates = [{ ...primary }];
+  const areaRatio = frameArea(el.frame) / Math.max(1, frameArea(screen));
+
+  // Full-screen text containers often hide CTA hit area near the lower edge.
+  if (!isInteractiveElement(el.type) && areaRatio > 0.45) {
+    const x = Math.round(el.frame.x + el.frame.w * 0.5);
+    candidates.push({ x, y: Math.round(el.frame.y + el.frame.h * 0.98), strategy: 'large-text-bottom-98' });
+    candidates.push({ x, y: Math.round(el.frame.y + el.frame.h * 0.92), strategy: 'large-text-bottom-92' });
+    candidates.push({ x, y: Math.round(el.frame.y + el.frame.h * 0.86), strategy: 'large-text-bottom-86' });
+  }
+
+  const seen = new Set<string>();
+  return candidates.filter((point) => {
+    const key = `${point.x},${point.y}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 class IOSSimulatorMCP {
   private server: Server;
   private lastScreenshotHashByUdid: Map<string, string> = new Map();
@@ -689,16 +807,34 @@ class IOSSimulatorMCP {
         throw new McpError(ErrorCode.InvalidRequest, `No element found with text matching "${text}"`);
       }
 
-      const el = matches[0];
-      const cx = Math.round(el.frame.x + el.frame.w / 2);
-      const cy = Math.round(el.frame.y + el.frame.h / 2);
+      const el = pickBestTextMatch(matches, text, elements);
+      const screen = getScreenFrame(elements);
+      const primary = inferTapPointForText(el, text, screen);
+      const candidates = buildTapPointCandidates(el, primary, screen);
+      const beforeSignature = this.buildUiSignature(elements);
 
-      await execAsync(`idb ui tap --udid ${target} ${cx} ${cy}`);
+      let chosen = candidates[0];
+      let transitioned = false;
+      for (let i = 0; i < candidates.length; i++) {
+        const point = candidates[i];
+        await execAsync(`idb ui tap --udid ${target} ${point.x} ${point.y}`);
+        chosen = point;
+
+        const shouldProbeTransition = candidates.length > 1 && i < candidates.length - 1;
+        if (!shouldProbeTransition) break;
+
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        const afterProbe = await this.fetchUiTree(target);
+        if (this.buildUiSignature(afterProbe) !== beforeSignature) {
+          transitioned = true;
+          break;
+        }
+      }
 
       return {
         content: [{
           type: 'text',
-          text: `Tapped element "${el.label ?? el.value ?? text}" at center (${cx}, ${cy}) on ${target}`,
+          text: `Tapped element "${el.label ?? el.value ?? text}" at (${chosen.x}, ${chosen.y}) on ${target} using ${chosen.strategy}${transitioned ? ' (transition-detected)' : ''}`,
         }],
       };
     } catch (error: any) {
@@ -730,6 +866,17 @@ class IOSSimulatorMCP {
 
         return out;
       });
+  }
+
+  private buildUiSignature(elements: UIElement[]): string {
+    return elements
+      .slice(0, 64)
+      .map((el) => {
+        const label = String(el.label ?? '').trim();
+        const value = String(el.value ?? '').trim();
+        return `${el.type}:${label}:${value}:${Math.round(el.frame.x)},${Math.round(el.frame.y)},${Math.round(el.frame.w)},${Math.round(el.frame.h)}`;
+      })
+      .join('|');
   }
 
   private async fetchUiTree(udid: string): Promise<UIElement[]> {
