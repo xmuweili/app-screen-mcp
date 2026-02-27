@@ -132,11 +132,15 @@ npm run build
 
 Restart your MCP client after updating config.
 
-## Skip Permission Prompts
+## Avoid Repeated Permission Prompts
 
-Most MCP clients (Claude Desktop, Cursor, Windsurf, Zed, Continue.dev) treat adding the server to their config as the permission grant — tools run freely with no further prompts.
+Prompt behavior is controlled by the MCP client, not this server.
 
-**Claude Code (CLI) is the exception.** It prompts for approval on every tool call by default. Fix it by adding this to `~/.claude/settings.json`:
+Most GUI MCP clients (Claude Desktop, Cursor, Windsurf, Zed, Continue.dev) usually treat adding the server to config as trust grant, so you should not see repeated tool approvals.
+
+### Claude Code (CLI)
+
+Allow this server's tools in `~/.claude/settings.json`:
 
 ```json
 {
@@ -148,9 +152,21 @@ Most MCP clients (Claude Desktop, Cursor, Windsurf, Zed, Continue.dev) treat add
 }
 ```
 
-> `ios-simulator` must match the server name you used in your `mcpServers` config. Create the file if it doesn't exist yet.
+`ios-simulator` must match the server name in your MCP config.
 
-**Scoped to one project only?** Put the same file at `.claude/settings.json` inside your project root instead.
+Use `.claude/settings.json` in project root if you want this scoped per-repo.
+
+### Codex CLI
+
+Codex uses command-level approval. To avoid repeated prompts:
+
+- Approve once with "always allow" when Codex asks.
+- Save reusable prefix rules for common commands.
+- Typical prefix: `["xcrun", "simctl", "list", "devices", "--json"]`
+- Typical prefix: `["idb", "list-targets"]`
+- Typical prefix: `["idb", "list-apps", "--udid", "<SIMULATOR_UDID>"]`
+
+Codex may still prompt for new or higher-risk command patterns.
 
 ## Quick Agent Workflow
 
