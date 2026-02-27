@@ -1,201 +1,316 @@
-# App Screen MCP
+<div align="center">
+  <img src="assets/banner.svg" alt="app-screen-mcp banner" width="100%"/>
 
-An MCP (Model Context Protocol) server that enables AI agents to visually interact with mobile app screens. This server allows AI assistants to take screenshots, inspect UI hierarchies, interact with elements, and analyze app interfaces.
+  <br/>
+  <br/>
+
+  [![License: MIT](https://img.shields.io/badge/License-MIT-7c3aed.svg?style=flat-square)](LICENSE)
+  [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-06b6d4.svg?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+  [![MCP](https://img.shields.io/badge/MCP-Compatible-a78bfa.svg?style=flat-square)](https://modelcontextprotocol.io)
+  [![Platform](https://img.shields.io/badge/Platform-macOS-34d399.svg?style=flat-square&logo=apple&logoColor=white)]()
+
+  **Give AI agents eyes and hands on your iOS Simulator.**
+  A [Model Context Protocol](https://modelcontextprotocol.io) server that lets any AI assistant perceive and interact with iOS apps — through the accessibility tree, screenshots, taps, swipes, and more.
+
+</div>
+
+---
+
+## What is this?
+
+`app-screen-mcp` is an MCP server that bridges your AI assistant (Claude, Cursor, etc.) to a running iOS Simulator. It exposes a clean set of tools so the AI can:
+
+- **See** what's on screen — via the structured accessibility tree or a screenshot
+- **Act** on the UI — tap elements, type text, swipe, press hardware buttons
+- **Reason** intelligently — find elements by their visible text, get a combined AI-ready screen summary
+
+No brittle CSS selectors. No OCR. The accessibility tree gives the AI structured, semantic information about every element on screen — labels, types, positions, states — the same data a screen reader uses.
+
+```
+AI Agent ──► MCP Client ──► app-screen-mcp ──► idb / xcrun simctl ──► iOS Simulator
+                                                    ▲
+                                         Accessibility Tree + Screenshot
+```
+
+---
 
 ## Features
 
-- **take_screenshot** - Captures screenshots from the iOS Simulator and returns them as base64-encoded images that AI can see visually
-- **dump_layout_tree** - Dumps the UI accessibility hierarchy for understanding app structure
-- **list_simulators** - Shows all available iOS simulators on the system
+| Capability | How |
+|---|---|
+| 📐 **Structured screen perception** | Reads the iOS accessibility tree via `idb ui describe-all` — types, labels, frames |
+| 📸 **Screenshot** | Captures and returns a JPEG screenshot as base64 |
+| 🎯 **Tap by text** | Finds an element by its visible label and taps its center — no coordinates needed |
+| ⌨️ **Type text** | Types into the focused element with shell-injection-safe escaping |
+| 👆 **Coordinate tap** | Tap at any (x, y) point as a fallback |
+| 🔄 **Swipe** | Full swipe gesture with start/end coords and duration |
+| 🔘 **Hardware buttons** | Simulate HOME, LOCK, SIRI, SIDE_BUTTON |
+| 🔍 **Element search** | Query the UI tree by text and get back matching elements with their frames |
+| 🤖 **AI screen summary** | Combined tree + screenshot in a single call — the best tool for understanding screen state |
+| 📱 **Device management** | List simulators, boot a simulator, launch an app |
+
+---
 
 ## Prerequisites
 
-- macOS with Xcode installed
-- Node.js 18+
-- iOS Simulator (part of Xcode)
+- **macOS** (Xcode must be installed)
+- **Node.js** 18+
+- **idb** — Facebook's iOS Device Bridge
+
+```bash
+brew tap facebook/fb
+brew install idb-companion
+pip3 install fb-idb
+```
+
+- An **iOS Simulator** running (open via Xcode → Window → Devices and Simulators, or Simulator.app)
+
+---
 
 ## Installation
 
-### Option 1: Install from source
-
 ```bash
-# Clone or download this repository
-cd ios-simulator-mcp
-
-# Install dependencies
+git clone https://github.com/xmuweili/app-screen-mcp.git
+cd app-screen-mcp
 npm install
-
-# Build the TypeScript code
 npm run build
-
-# Test the server
-npm start
 ```
 
-### Option 2: Global installation
+---
 
-```bash
-# Install globally for easy access
-npm install -g .
+## Connecting to your AI client
 
-# Run from anywhere
-ios-simulator-mcp
-```
+### Claude Desktop
 
-## Usage
-
-### Running the Server
-
-```bash
-# Development mode (rebuilds on changes)
-npm run dev
-
-# Production mode
-npm start
-
-# Or if installed globally
-ios-simulator-mcp
-```
-
-### Testing the Tools
-
-Before connecting to AI tools, make sure you have an iOS Simulator running:
-
-1. Open Xcode
-2. Go to Xcode → Open Developer Tool → Simulator
-3. Launch any iOS device simulator
-
-## Integration with AI Coding Tools
-
-### Cursor IDE
-
-Add this to your Cursor settings in `~/Library/Application Support/Cursor/User/globalStorage/cursor.settings.json`:
+Add this to your `claude_desktop_config.json` (usually at `~/Library/Application Support/Claude/`):
 
 ```json
 {
-  "mcp": {
-    "servers": {
-      "ios-simulator": {
-        "command": "node",
-        "args": ["/path/to/ios-simulator-mcp/dist/index.js"]
-      }
-    }
-  }
-}
-```
-
-Or if installed globally:
-
-```json
-{
-  "mcp": {
-    "servers": {
-      "ios-simulator": {
-        "command": "ios-simulator-mcp"
-      }
-    }
-  }
-}
-```
-
-### Claude Code
-
-Add this to your `~/.config/claude-code/mcp.json`:
-
-```json
-{
-  "servers": {
+  "mcpServers": {
     "ios-simulator": {
       "command": "node",
-      "args": ["/path/to/ios-simulator-mcp/dist/index.js"]
+      "args": ["/absolute/path/to/app-screen-mcp/dist/index.js"]
     }
   }
 }
 ```
 
-Or if installed globally:
+### Cursor / VS Code (via MCP extension)
 
 ```json
 {
-  "servers": {
+  "mcp.servers": {
     "ios-simulator": {
-      "command": "ios-simulator-mcp"
+      "command": "node",
+      "args": ["/absolute/path/to/app-screen-mcp/dist/index.js"]
     }
   }
 }
 ```
 
-### Other MCP-compatible tools
+Restart your client after saving. The tools will appear automatically.
 
-This server implements the standard MCP protocol and should work with any MCP-compatible AI tool. Use the command `node /path/to/dist/index.js` or `ios-simulator-mcp` if installed globally.
+---
 
-## Available Tools
+## Tool Reference
 
-### take_screenshot
+### Device Management
 
-Takes a screenshot of the currently running iOS Simulator.
+#### `list_simulators`
+Lists all available iOS simulators and their current state.
+```json
+{}
+```
+Returns a JSON list of simulators with `udid`, `name`, `state`, and `runtime`.
 
-**Usage:** Ask your AI assistant to "take a screenshot of the iOS simulator"
+---
 
-**Returns:** Base64-encoded PNG image that AI can see and analyze visually
-
-### dump_layout_tree
-
-Dumps the accessibility hierarchy of the current iOS Simulator screen.
-
-**Usage:** Ask your AI assistant to "show me the UI hierarchy" or "dump the layout tree"
-
-**Returns:** Text representation of the UI element tree with accessibility information
-
-### list_simulators
-
-Lists all available iOS simulators on your system.
-
-**Usage:** Ask your AI assistant to "list available simulators"
-
-**Returns:** Text output showing all simulator devices, runtimes, and their states
-
-## Error Handling
-
-The server gracefully handles common error scenarios:
-
-- **No simulator running**: Clear error message asking to start a simulator first
-- **Missing Xcode tools**: Error message about missing xcrun command
-- **Permission issues**: Helpful error messages about file access
-
-## Troubleshooting
-
-### "No devices are booted"
-Make sure you have an iOS Simulator running. Open Xcode → Developer Tools → Simulator and launch a device.
-
-### "xcrun: error: unable to find utility"
-Ensure Xcode is installed and command line tools are set up:
-```bash
-xcode-select --install
+#### `boot_simulator`
+Boots a simulator by UDID.
+```json
+{ "udid": "2FCF6F16-0857-4CB1-B2DC-9A69F2C8231C" }
 ```
 
-### "command not found: ios-simulator-mcp"
-If installed globally, make sure npm's global bin directory is in your PATH:
-```bash
-npm config get prefix
+---
+
+#### `launch_app`
+Launches an installed app on the simulator.
+```json
+{ "bundle_id": "com.example.MyApp", "udid": "..." }
+```
+`udid` is optional — defaults to the currently booted simulator.
+
+---
+
+### Perceiving the Screen
+
+#### `get_ui_tree` ⭐
+Returns the full accessibility tree of the current screen as structured JSON.
+Each element includes its **type**, **label**, **value**, **frame** (x, y, w, h), and **enabled** state.
+
+```json
+{ "udid": "..." }
 ```
 
-### Permission errors
-Make sure the server has permission to write to `/tmp/` directory for screenshot files.
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Build TypeScript
-npm run build
-
-# Run in development mode
-npm run dev
+Example output element:
+```json
+{
+  "type": "Button",
+  "label": "Generate",
+  "value": null,
+  "frame": { "x": 44, "y": 846, "w": 352, "h": 60 },
+  "enabled": true
+}
 ```
+
+---
+
+#### `take_screenshot`
+Takes a screenshot and returns it as a base64-encoded JPEG image.
+
+```json
+{ "udid": "..." }
+```
+
+---
+
+#### `get_screen_summary` ⭐
+The best tool for AI agents to understand the current screen state. Fetches the accessibility tree and screenshot **in parallel** and returns both in a single response.
+
+```json
+{ "udid": "..." }
+```
+
+Returns:
+```json
+{
+  "timestamp": 1714000000000,
+  "udid": "2FCF6F16-...",
+  "element_count": 27,
+  "elements": [ ... ]
+}
+```
+…followed by the screenshot image in the same response.
+
+---
+
+### Interacting with the Screen
+
+#### `tap_text` ⭐
+Finds the first element whose label/value/hint contains the given text, then taps its center. More reliable than coordinate tapping.
+
+```json
+{ "text": "Generate", "udid": "..." }
+```
+
+---
+
+#### `tap`
+Taps at a specific coordinate.
+
+```json
+{ "x": 220, "y": 876, "udid": "..." }
+```
+
+---
+
+#### `type_text`
+Types text into the currently focused element.
+
+```json
+{ "text": "white wall, wooden floor", "udid": "..." }
+```
+
+---
+
+#### `swipe`
+Performs a swipe gesture between two points.
+
+```json
+{
+  "from_x": 200, "from_y": 700,
+  "to_x": 200,   "to_y": 200,
+  "duration_ms": 400,
+  "udid": "..."
+}
+```
+
+---
+
+#### `press_button`
+Simulates a hardware button press.
+
+```json
+{ "button": "HOME", "udid": "..." }
+```
+
+`button` options: `HOME` · `LOCK` · `SIDE_BUTTON` · `SIRI`
+
+---
+
+### AI Utilities
+
+#### `find_elements`
+Searches the current UI tree for elements matching a text query (searches labels, values, and hints).
+
+```json
+{ "query": "Login", "udid": "..." }
+```
+
+Returns:
+```json
+{
+  "query": "Login",
+  "count": 2,
+  "elements": [ ... ]
+}
+```
+
+---
+
+## Example: AI-driven flow
+
+Here's what an AI agent can do with this server in a single conversation turn:
+
+```
+1. get_screen_summary()       → sees the current screen
+2. find_elements("Sign In")   → locates the login button
+3. tap_text("Email")          → taps the email field
+4. type_text("user@example.com")
+5. tap_text("Password")
+6. type_text("hunter2")
+7. tap_text("Sign In")
+8. get_screen_summary()       → confirms navigation succeeded
+```
+
+No hardcoded coordinates. No flaky selectors. Just semantic interaction driven by what's actually visible on screen.
+
+---
+
+## Tips for better results
+
+- **Add `Semantics` to Flutter apps** — if your app is built in Flutter, wrap key widgets with `Semantics(label: "...")` to populate the accessibility tree. Without it, the AI falls back to coordinate tapping.
+- **Use `tap_text` over `tap`** whenever the element has a visible label.
+- **Use `get_screen_summary`** at the start of each task to give the AI full context before it acts.
+- **Use `find_elements`** to verify an element exists before tapping it.
+
+---
+
+## Architecture
+
+```
+src/
+└── index.ts          Single-file MCP server
+
+External dependencies:
+  xcrun simctl        Device lifecycle, screenshots
+  idb                 UI tree, tap, swipe, type, button press
+```
+
+The server is intentionally a thin adapter — it validates inputs, shells out to `idb` / `simctl`, normalizes outputs into a consistent JSON schema, and returns them as MCP tool responses.
+
+---
 
 ## License
 
-MIT
+MIT © [xmuweili](https://github.com/xmuweili)
