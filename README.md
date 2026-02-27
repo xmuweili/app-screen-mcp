@@ -132,9 +132,11 @@ npm run build
 
 Restart your MCP client after updating config.
 
-## Skip Permission Prompts (Claude Code)
+## Skip Permission Prompts
 
-When using this MCP with **Claude Code**, every tool call triggers an approval prompt by default. To auto-approve all tools from this server, add this to your `~/.claude/settings.json`:
+Most MCP clients (Claude Desktop, Cursor, Windsurf, Zed, Continue.dev) treat adding the server to their config as the permission grant — tools run freely with no further prompts.
+
+**Claude Code (CLI) is the exception.** It prompts for approval on every tool call by default. Fix it by adding this to `~/.claude/settings.json`:
 
 ```json
 {
@@ -146,11 +148,9 @@ When using this MCP with **Claude Code**, every tool call triggers an approval p
 }
 ```
 
-> The key `ios-simulator` must match the server name you used in your MCP config (`mcpServers` key). If you named it differently, update accordingly.
+> `ios-simulator` must match the server name you used in your `mcpServers` config. Create the file if it doesn't exist yet.
 
-If `~/.claude/settings.json` doesn't exist yet, create it with that content. Applies globally to all your projects.
-
-**Want it scoped to one project only?** Put the same file at `.claude/settings.json` inside your project root instead.
+**Scoped to one project only?** Put the same file at `.claude/settings.json` inside your project root instead.
 
 ## Quick Agent Workflow
 
