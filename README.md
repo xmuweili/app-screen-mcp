@@ -16,6 +16,10 @@
   </p>
 </div>
 
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/xmuweili/app-screen-mcp/main/install.sh)
+```
+
 ## Why app-screen-mcp
 
 Most mobile AI automation fails for one reason: it acts blind.
