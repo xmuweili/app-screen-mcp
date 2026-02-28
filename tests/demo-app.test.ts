@@ -14,12 +14,12 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMcpClient, type McpSession } from './helpers/client.js';
 import {
-  launchApp, tapId, tapText, typeText, swipe,
-  findById, findByText,
+  launchApp, tapId, typeText, swipe,
+  findById,
   assertExists, assertLabelContains, assertStatValue,
   sleep, waitUntil,
 } from './helpers/ui.js';
-import { screenshotHash, takeScreenshot, getScreenSummary, tapRelativeById } from './helpers/vision.js';
+import { screenshotHash, takeScreenshot, getScreenSummary, tapRelativeById, saveScreenshot } from './helpers/vision.js';
 
 const BUNDLE_ID = 'com.mcpdemo.MCPDemo';
 
@@ -617,5 +617,76 @@ describe('Vision — tap_relative', () => {
     await waitUntil(async () => {
       await assertStatValue(session.client, 'home_stat_counter', '1');
     }, 3000);
+  });
+});
+
+// ─── 14. Vision — inspection snapshots ───────────────────────────────────────
+//
+// Each test saves a JPEG to test-screenshots/<name>.jpg and records the path in
+// a diagnostic message. The AI caller can read those files with its vision
+// capability to verify visual correctness without any embedded LLM API calls.
+//
+// Run individually:
+//   node --test --import tsx/esm --test-name-pattern "inspection" tests/demo-app.test.ts
+
+describe('Vision — inspection snapshots', () => {
+  it('home tab: initial state', async (ctx) => {
+    await goHome(session);
+    const file = await saveScreenshot(session.client, 'home-initial');
+    ctx.diagnostic(`screenshot → ${file}`);
+  });
+
+  it('home tab: after two increments', async (ctx) => {
+    await goHome(session);
+    await tapId(session.client, 'home_increment');
+    await tapId(session.client, 'home_increment');
+    await sleep(300);
+    const file = await saveScreenshot(session.client, 'home-after-2-increments');
+    ctx.diagnostic(`screenshot → ${file}`);
+  });
+
+  it('controls tab: toggle OFF (default)', async (ctx) => {
+    await goControls(session);
+    const sw = await assertExists(session.client, 'ctrl_toggle');
+    if (sw.value === '1') { await tapId(session.client, 'ctrl_toggle'); await sleep(300); }
+    const file = await saveScreenshot(session.client, 'controls-toggle-off');
+    ctx.diagnostic(`screenshot → ${file}`);
+  });
+
+  it('controls tab: toggle ON', async (ctx) => {
+    await goControls(session);
+    const sw = await assertExists(session.client, 'ctrl_toggle');
+    if (sw.value !== '1') { await tapId(session.client, 'ctrl_toggle'); await sleep(300); }
+    const file = await saveScreenshot(session.client, 'controls-toggle-on');
+    ctx.diagnostic(`screenshot → ${file}`);
+  });
+
+  it('controls tab: each accent color selected', async (ctx) => {
+    await goControls(session);
+    const colors = ['indigo', 'coral', 'teal', 'orange', 'purple'] as const;
+    const files: string[] = [];
+    for (const color of colors) {
+      await tapId(session.client, `ctrl_color_${color}`);
+      await sleep(300);
+      files.push(await saveScreenshot(session.client, `controls-color-${color}`));
+    }
+    ctx.diagnostic(`screenshots → ${files.join(', ')}`);
+  });
+
+  it('list tab: initial view (items 1–5 visible)', async (ctx) => {
+    await goList(session);
+    const file = await saveScreenshot(session.client, 'list-initial');
+    ctx.diagnostic(`screenshot → ${file}`);
+  });
+
+  it('list tab: after scrolling to item 10', async (ctx) => {
+    await goList(session);
+    await waitUntil(async () => {
+      await swipe(session.client, 195, 600, 195, 200, 400);
+      await sleep(300);
+      await assertExists(session.client, 'list_item_10');
+    }, 6000);
+    const file = await saveScreenshot(session.client, 'list-scrolled-item-10');
+    ctx.diagnostic(`screenshot → ${file}`);
   });
 });

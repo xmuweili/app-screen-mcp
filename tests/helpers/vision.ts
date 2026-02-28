@@ -6,9 +6,15 @@
  * and interpret the visual content using its own vision capabilities.
  */
 
+import { writeFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { callTool } from './client.js';
 import type { UIElement } from './ui.js';
+
+// Screenshots are saved to <repo-root>/test-screenshots/ (gitignored)
+const SCREENSHOT_DIR = join(fileURLToPath(import.meta.url), '..', '..', '..', 'test-screenshots');
 
 // ─── Screenshot helpers ────────────────────────────────────────────────────────
 
@@ -46,6 +52,20 @@ export async function takeScreenshot(client: Client): Promise<ScreenshotMeta & {
     sentWidth: meta.sent_width as number,
     sentHeight: meta.sent_height as number,
   };
+}
+
+/**
+ * Take a screenshot and write it as a JPEG file inside `test-screenshots/`.
+ * Returns the absolute path of the saved file so the AI caller can read it.
+ *
+ * @param name  Descriptive slug used as the filename, e.g. "home-initial"
+ */
+export async function saveScreenshot(client: Client, name: string): Promise<string> {
+  const { base64 } = await takeScreenshot(client);
+  await mkdir(SCREENSHOT_DIR, { recursive: true });
+  const file = join(SCREENSHOT_DIR, `${name}.jpg`);
+  await writeFile(file, Buffer.from(base64, 'base64'));
+  return file;
 }
 
 // ─── Screen summary helper ─────────────────────────────────────────────────────
