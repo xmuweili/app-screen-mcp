@@ -55,6 +55,32 @@ AI Agent / MCP Client
    iOS Simulator
 ```
 
+### How the AI discovers and runs it
+
+You never invoke the server manually. Here is what happens automatically:
+
+```text
+1. You add the server to your MCP client config (one-time setup)
+
+2. MCP client starts  →  spawns  node dist/index.js  as a child process
+
+3. Client sends tools/list  →  server returns all 13 tool definitions
+   (name, description, JSON input schema for each tool)
+
+4. Client injects those definitions into the AI's context on every turn
+
+5. AI reads the tool list and calls tools on its own when relevant
+   e.g. "take a screenshot" → AI calls take_screenshot, gets back JPEG
+        "tap the Login button" → AI calls tap_text({text:"Login"})
+
+6. Client relays the call to the server process via stdio,
+   server runs xcrun / idb commands, returns the result to the AI
+```
+
+The AI does not need to be told the server exists — the tool descriptions
+are always present in its context. As long as the task involves an iOS
+Simulator, the AI will reach for the right tool automatically.
+
 ## Feature Highlights
 
 - Full simulator discovery and boot control
