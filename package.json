@@ -30,7 +30,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/xmuweili/app-screen-mcp.git"
+    "url": "git+https://github.com/xmuweili/app-screen-mcp.git"
   },
   "homepage": "https://github.com/xmuweili/app-screen-mcp#readme",
   "bugs": {
@@ -48,6 +48,6 @@
     "typescript": "^5.0.0"
   },
   "bin": {
-    "app-screen-mcp": "./dist/index.js"
+    "app-screen-mcp": "dist/index.js"
   }
 }
