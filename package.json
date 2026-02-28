@@ -7,9 +7,16 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsc && node dist/index.js"
+    "dev": "tsc && node dist/index.js",
+    "test": "node --test --import tsx/esm tests/demo-app.test.ts"
   },
-  "keywords": ["mcp", "ios", "simulator", "screenshot", "accessibility"],
+  "keywords": [
+    "mcp",
+    "ios",
+    "simulator",
+    "screenshot",
+    "accessibility"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -17,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.0.0"
   },
   "bin": {

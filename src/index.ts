@@ -31,6 +31,7 @@ interface SimulatorDevice {
 
 interface UIElement {
   type: string;
+  identifier?: string | null;
   label?: string | null;
   value?: string | null;
   hint?: string | null;
@@ -106,8 +107,12 @@ function normalizeScreenshotOptions(maxDimInput?: unknown, qualityInput?: unknow
 // idb ui describe-all returns a flat array of elements (no nesting)
 function normalizeElement(node: any): UIElement {
   const frame = node.frame ?? {};
+  // idb reports UISwitch as type="CheckBox" with subrole="AXSwitch"; normalise to "Switch"
+  const rawType: string = node.type ?? node.AXType ?? 'Unknown';
+  const type = (rawType === 'CheckBox' && node.subrole === 'AXSwitch') ? 'Switch' : rawType;
   return {
-    type: node.type ?? node.AXType ?? 'Unknown',
+    type,
+    identifier: node.AXUniqueId ?? node.AXIdentifier ?? node.identifier ?? null,
     label: node.AXLabel ?? node.label ?? null,
     value: node.AXValue ?? node.value ?? null,
     hint: node.help ?? node.AXHint ?? null,
@@ -124,9 +129,13 @@ function normalizeElement(node: any): UIElement {
 function findElementsByText(elements: UIElement[], query: string): UIElement[] {
   const lower = query.toLowerCase();
   return elements.filter((el) => {
-    const text = [el.label, el.value, el.hint].filter(Boolean).join(' ').toLowerCase();
+    const text = [el.identifier, el.label, el.value, el.hint].filter(Boolean).join(' ').toLowerCase();
     return text.includes(lower);
   });
+}
+
+function findElementsById(elements: UIElement[], id: string): UIElement[] {
+  return elements.filter((el) => el.identifier === id);
 }
 
 function isInteractiveElement(type: string): boolean {
@@ -281,6 +290,19 @@ class IOSSimulatorMCP {
               udid: { type: 'string', description: 'Simulator UDID to boot' },
             },
             required: ['udid'],
+            additionalProperties: false,
+          },
+        },
+        {
+          name: 'terminate_app',
+          description: 'Terminate (force-quit) an app on a simulator',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              bundle_id: { type: 'string', description: 'App bundle identifier (e.g. com.example.myapp)' },
+              udid: { type: 'string', description: 'Simulator UDID (optional, defaults to booted simulator)' },
+            },
+            required: ['bundle_id'],
             additionalProperties: false,
           },
         },
@@ -447,6 +469,19 @@ class IOSSimulatorMCP {
             additionalProperties: false,
           },
         },
+        {
+          name: 'tap_id',
+          description: 'Find a UI element by its accessibility identifier and tap its center.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: 'Accessibility identifier of the element (set via .accessibilityIdentifier in SwiftUI)' },
+              udid: { type: 'string', description: 'Simulator UDID (optional, defaults to booted simulator)' },
+            },
+            required: ['id'],
+            additionalProperties: false,
+          },
+        },
       ],
     }));
 
@@ -458,6 +493,8 @@ class IOSSimulatorMCP {
           return this.listSimulators();
         case 'boot_simulator':
           return this.bootSimulator(args.udid as string);
+        case 'terminate_app':
+          return this.terminateApp(args.bundle_id as string, args.udid);
         case 'launch_app':
           return this.launchApp(args.bundle_id as string, args.udid);
         case 'get_ui_tree':
@@ -494,6 +531,8 @@ class IOSSimulatorMCP {
           return this.findElements(args.query as string, args.udid);
         case 'tap_text':
           return this.tapText(args.text as string, args.udid);
+        case 'tap_id':
+          return this.tapById(args.id as string, args.udid);
         default:
           throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
       }
@@ -544,6 +583,18 @@ class IOSSimulatorMCP {
     }
     return {
       content: [{ type: 'text', text: `Simulator ${udid} is booted.` }],
+    };
+  }
+
+  private async terminateApp(bundleId: string, udid?: string) {
+    const target = await resolveUdid(udid);
+    try {
+      await execAsync(`xcrun simctl terminate ${target} ${bundleId}`);
+    } catch {
+      // Ignore errors — app may not be running
+    }
+    return {
+      content: [{ type: 'text', text: `Terminated ${bundleId} on ${target}` }],
     };
   }
 
@@ -780,6 +831,51 @@ class IOSSimulatorMCP {
   }
 
   // AI utilities
+
+  private async tapById(id: string, udid?: string) {
+    const target = await resolveUdid(udid);
+    try {
+      const elements = await this.fetchUiTree(target);
+      const matches = findElementsById(elements, id);
+
+      if (matches.length === 0) {
+        throw new McpError(ErrorCode.InvalidRequest, `No element found with identifier "${id}"`);
+      }
+
+      const el = matches[0];
+      const cx = Math.round(el.frame.x + el.frame.w / 2);
+      const cy = Math.round(el.frame.y + el.frame.h / 2);
+
+      // UISwitch requires a swipe gesture; a raw coordinate tap doesn't toggle it
+      if (/switch/i.test(el.type)) {
+        const isOn = el.value === '1';
+        const fromX = isOn
+          ? Math.round(el.frame.x + el.frame.w - 6)
+          : Math.round(el.frame.x + 6);
+        const toX = isOn
+          ? Math.round(el.frame.x + 6)
+          : Math.round(el.frame.x + el.frame.w - 6);
+        await execAsync(`idb ui swipe --udid ${target} ${fromX} ${cy} ${toX} ${cy} --duration 0.15`);
+        return {
+          content: [{
+            type: 'text',
+            text: `Toggled switch "${id}" (was ${isOn ? 'ON' : 'OFF'}) at (${cx}, ${cy}) on ${target}`,
+          }],
+        };
+      }
+
+      await execAsync(`idb ui tap --udid ${target} ${cx} ${cy}`);
+      return {
+        content: [{
+          type: 'text',
+          text: `Tapped element with id "${id}" at (${cx}, ${cy}) on ${target}`,
+        }],
+      };
+    } catch (error: any) {
+      if (error instanceof McpError) throw error;
+      throw new McpError(ErrorCode.InternalError, `Failed to tap by id: ${error.message}`);
+    }
+  }
 
   private async findElements(query: string, udid?: string) {
     const target = await resolveUdid(udid);

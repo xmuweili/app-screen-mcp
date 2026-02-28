@@ -2,3 +2,13 @@ node_modules/
 dist/
 *.js.map
 *.d.ts.map
+
+# macOS
+.DS_Store
+
+# Xcode user-specific state
+xcuserdata/
+*.xcuserstate
+
+# Claude Code local settings
+.claude/settings.local.json
