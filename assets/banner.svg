@@ -1,63 +1,65 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="560" viewBox="0 0 1600 560" role="img" aria-labelledby="title desc">
   <title id="title">app-screen-mcp banner</title>
-  <desc id="desc">Minimal banner for app-screen-mcp.</desc>
+  <desc id="desc">Minimal and neat banner for app-screen-mcp.</desc>
 
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0B1721"/>
-      <stop offset="1" stop-color="#122736"/>
+    <linearGradient id="lineAccent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0EA5A5"/>
+      <stop offset="1" stop-color="#2563EB"/>
     </linearGradient>
-
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#22D3EE"/>
-      <stop offset="1" stop-color="#34D399"/>
-    </linearGradient>
-
-    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
-      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#9FD3E0" stroke-opacity="0.08" stroke-width="1"/>
-    </pattern>
   </defs>
 
-  <rect width="1600" height="560" fill="url(#bg)"/>
-  <rect width="1600" height="560" fill="url(#grid)"/>
+  <rect width="1600" height="560" fill="#F7F8FA"/>
 
-  <rect x="72" y="88" width="228" height="28" rx="14" fill="#1F3A4A" stroke="#4FD1E0" stroke-opacity="0.4"/>
-  <text x="186" y="107" text-anchor="middle" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" letter-spacing="1.2" fill="#A7F3D0">MODEL CONTEXT PROTOCOL</text>
+  <circle cx="1420" cy="-60" r="220" fill="#0F172A" fill-opacity="0.04"/>
+  <circle cx="160" cy="600" r="220" fill="#0F172A" fill-opacity="0.03"/>
 
-  <text x="72" y="210" font-family="Avenir Next, Segoe UI, Helvetica Neue, sans-serif" font-size="82" font-weight="800" fill="#E6FAFF">app-screen-mcp</text>
-  <text x="72" y="258" font-family="Avenir Next, Segoe UI, Helvetica Neue, sans-serif" font-size="31" font-weight="500" fill="#BFE8F2">AI control for iOS Simulator, built on accessibility.</text>
+  <rect x="96" y="92" width="232" height="34" rx="17" fill="#E9EEF5"/>
+  <text x="212" y="115" text-anchor="middle" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" letter-spacing="1.1" fill="#334155">MCP FOR IOS SIMULATOR</text>
 
-  <g transform="translate(72,304)">
-    <rect x="0" y="0" width="182" height="40" rx="20" fill="#173949" stroke="#40CBE2" stroke-opacity="0.5"/>
-    <text x="91" y="26" text-anchor="middle" font-family="Avenir Next, Segoe UI, Helvetica Neue, sans-serif" font-size="16" font-weight="600" fill="#CFFAFE">UI Tree + Vision</text>
+  <rect x="96" y="164" width="66" height="66" rx="16" fill="#FFFFFF" stroke="#D8DEE8"/>
+  <rect x="114" y="182" width="30" height="30" rx="8" fill="#0F172A"/>
+  <circle cx="129" cy="197" r="3.5" fill="#FFFFFF"/>
+  <circle cx="146" cy="197" r="3.5" fill="#FFFFFF"/>
+  <rect x="124" y="208" width="27" height="2.5" rx="1.25" fill="#FFFFFF"/>
 
-    <rect x="198" y="0" width="160" height="40" rx="20" fill="#173949" stroke="#40CBE2" stroke-opacity="0.5"/>
-    <text x="278" y="26" text-anchor="middle" font-family="Avenir Next, Segoe UI, Helvetica Neue, sans-serif" font-size="16" font-weight="600" fill="#CFFAFE">Tap • Swipe</text>
+  <text x="184" y="206" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="76" font-weight="750" fill="#0F172A">app-screen-mcp</text>
+  <text x="98" y="258" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="30" font-weight="500" fill="#475569">Grounded automation for iOS Simulator agents.</text>
 
-    <rect x="374" y="0" width="144" height="40" rx="20" fill="#173949" stroke="#40CBE2" stroke-opacity="0.5"/>
-    <text x="446" y="26" text-anchor="middle" font-family="Avenir Next, Segoe UI, Helvetica Neue, sans-serif" font-size="16" font-weight="600" fill="#CFFAFE">Type Text</text>
+  <line x1="96" y1="292" x2="760" y2="292" stroke="#CBD5E1"/>
+
+  <g transform="translate(96,326)">
+    <text x="0" y="0" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="22" font-weight="600" fill="#0F172A">Observe</text>
+    <text x="0" y="34" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="20" fill="#475569">UI tree + screenshot</text>
+
+    <text x="260" y="0" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="22" font-weight="600" fill="#0F172A">Reason</text>
+    <text x="260" y="34" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="20" fill="#475569">pick next safe action</text>
+
+    <text x="528" y="0" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="22" font-weight="600" fill="#0F172A">Act</text>
+    <text x="528" y="34" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="20" fill="#475569">tap, type, swipe, verify</text>
   </g>
 
-  <g transform="translate(980,84)">
-    <rect x="0" y="0" width="520" height="392" rx="20" fill="#0F2230" stroke="#335C72"/>
-    <rect x="0" y="0" width="520" height="4" fill="url(#accent)"/>
+  <line x1="184" y1="394" x2="340" y2="394" stroke="url(#lineAccent)" stroke-width="3" stroke-linecap="round"/>
+  <line x1="452" y1="394" x2="608" y2="394" stroke="url(#lineAccent)" stroke-width="3" stroke-linecap="round"/>
 
-    <text x="24" y="42" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="15" fill="#A7F3D0">get_screen_summary()</text>
-    <line x1="24" y1="58" x2="496" y2="58" stroke="#2D4D60"/>
+  <g transform="translate(938,86)">
+    <rect x="0" y="0" width="566" height="388" rx="22" fill="#FFFFFF" stroke="#D8DEE8"/>
+    <rect x="0" y="0" width="566" height="6" rx="3" fill="url(#lineAccent)"/>
 
-    <text x="24" y="96" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="14" fill="#D8F5FF">{</text>
-    <text x="42" y="126" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="14" fill="#D8F5FF">"element_count": 27,</text>
-    <text x="42" y="154" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="14" fill="#D8F5FF">"actions": ["tap_text", "type_text"],</text>
-    <text x="42" y="182" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="14" fill="#D8F5FF">"screenshot": "&lt;base64&gt;"</text>
-    <text x="24" y="210" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="14" fill="#D8F5FF">}</text>
+    <text x="30" y="48" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="16" fill="#0F172A">get_screen_summary()</text>
+    <line x1="30" y1="64" x2="536" y2="64" stroke="#E2E8F0"/>
 
-    <rect x="24" y="250" width="472" height="112" rx="12" fill="#102C3D" stroke="#2D4D60"/>
-    <line x1="52" y1="306" x2="206" y2="306" stroke="#40CBE2" stroke-width="2"/>
-    <line x1="216" y1="306" x2="370" y2="306" stroke="#34D399" stroke-width="2"/>
-    <line x1="380" y1="306" x2="468" y2="306" stroke="#40CBE2" stroke-width="2"/>
-    <text x="246" y="292" text-anchor="middle" font-family="Avenir Next, Segoe UI, Helvetica Neue, sans-serif" font-size="14" font-weight="600" fill="#CFFAFE">AI Agent → app-screen-mcp → iOS Simulator</text>
-    <text x="246" y="332" text-anchor="middle" font-family="Avenir Next, Segoe UI, Helvetica Neue, sans-serif" font-size="13" fill="#A7D7E5">Deterministic automation from live screen context</text>
+    <text x="30" y="102" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="14" fill="#334155">{ "elements": 42, "image": "&lt;base64&gt;" }</text>
+    <text x="30" y="132" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="14" fill="#334155">{ "next": "tap_text(\"Sign In\")" }</text>
+
+    <g transform="translate(30,184)">
+      <rect x="0" y="0" width="506" height="164" rx="14" fill="#F8FAFC" stroke="#E2E8F0"/>
+      <text x="24" y="40" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="22" font-weight="600" fill="#0F172A">Agent loop</text>
+      <text x="24" y="76" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="18" fill="#475569">1. Read current screen state</text>
+      <text x="24" y="106" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="18" fill="#475569">2. Execute one deterministic interaction</text>
+      <text x="24" y="136" font-family="Avenir Next, Inter, Segoe UI, sans-serif" font-size="18" fill="#475569">3. Re-check and continue</text>
+    </g>
   </g>
 
-  <text x="72" y="520" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="13" fill="#8EBFCE">github.com/xmuweili/app-screen-mcp</text>
+  <text x="96" y="520" font-family="SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="14" fill="#64748B">github.com/xmuweili/app-screen-mcp</text>
 </svg>
