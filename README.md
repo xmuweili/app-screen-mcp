@@ -148,11 +148,37 @@ pip3 install fb-idb
 
 ## Installation
 
+### One-stop script (recommended)
+
+Downloads and installs all prerequisites (Homebrew, Node.js, idb-companion, fb-idb) and then
+installs `app-screen-mcp` globally:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/xmuweili/app-screen-mcp/main/install.sh)
+```
+
+### npm / pnpm (global)
+
+```bash
+npm install -g app-screen-mcp
+# or
+pnpm add -g app-screen-mcp
+```
+
+The installed binary path is printed by the one-stop script; you can also find it with:
+
+```bash
+node -e "console.log(require('path').join(require('child_process').execSync('npm root -g').toString().trim(),'app-screen-mcp','dist','index.js'))"
+```
+
+### From source
+
 ```bash
 git clone https://github.com/xmuweili/app-screen-mcp.git
 cd app-screen-mcp
 npm install
 npm run build
+# binary → dist/index.js
 ```
 
 ## Configure Your MCP Client
@@ -247,6 +273,79 @@ npm start
 
 Main implementation lives in:
 - `src/index.ts`
+
+## Contributing
+
+Contributions are welcome. Here is the full development workflow.
+
+### 1. Fork and clone
+
+```bash
+git clone https://github.com/<your-username>/app-screen-mcp.git
+cd app-screen-mcp
+npm install
+```
+
+### 2. Build
+
+```bash
+npm run build        # compiles src/index.ts → dist/
+```
+
+TypeScript source is in `src/index.ts`. The compiled output is what gets published to npm
+(the `dist/` directory is git-ignored but included in the npm tarball via `"files"`).
+
+### 3. Run tests
+
+The test suite drives a real iOS Simulator through the MCP server. Before running:
+
+1. Open Xcode → Simulator and boot a device (iPhone 16 Pro or similar).
+2. Build and install the demo app:
+   ```bash
+   cd demo-app
+   xcodebuild -project MCPDemo.xcodeproj -scheme MCPDemo \
+     -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
+   # Install the built .app onto the booted simulator
+   xcrun simctl install booted \
+     $(xcodebuild -project MCPDemo.xcodeproj -scheme MCPDemo \
+       -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+       -showBuildSettings 2>/dev/null | awk '/BUILT_PRODUCTS_DIR/{print $3}')/MCPDemo.app
+   ```
+3. Return to repo root and run:
+   ```bash
+   npm test
+   ```
+
+Tests use Node.js built-in `node:test` with TypeScript executed via `tsx`. Each test
+communicates with `dist/index.js` through a `StdioClientTransport` — the full MCP stack
+is exercised on every run.
+
+Test helpers live in `tests/helpers/`:
+
+| File | Purpose |
+|---|---|
+| `client.ts` | Spawns the MCP server, exposes `callTool` |
+| `ui.ts` | Typed wrappers: `tapId`, `typeText`, `swipe`, `assertValue`, … |
+| `vision.ts` | Screenshot helpers: `screenshotHash`, `saveScreenshot`, `getScreenSummary`, `tapRelativeById` |
+
+### 4. Add a new tool
+
+All tools are registered in a single file: `src/index.ts`.
+
+1. Add your tool's schema inside the `ListToolsRequestSchema` handler.
+2. Add the tool's implementation inside the `CallToolRequestSchema` handler (follow the
+   existing `case` pattern).
+3. Add a `UIElement` field if the new tool needs to surface new accessibility data.
+4. Write at least one test in `tests/demo-app.test.ts`.
+5. Run `npm test` to verify everything passes.
+6. Update the **Tool Catalog** table in `README.md`.
+
+### 5. Submit a pull request
+
+- Keep commits focused (one logical change per commit).
+- Include a short description of *why* the change is needed, not just *what* changed.
+- If your PR adds or changes a tool, update the Tool Catalog table and run `npm test`.
+- CI is not yet configured — maintainer will run tests before merge.
 
 ## Reliability Notes
 
